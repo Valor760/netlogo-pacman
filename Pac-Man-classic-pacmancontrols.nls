@@ -1,0 +1,375 @@
+
+
+
+to pacman-choose-direction-and-move
+
+     ;;each loop note that we have not set a direction for pac-man ot move in yet
+     ; the value of this flag is changed by the move(dir) function
+   set pacman-still-to-move? true
+
+   ;; there's the option of playing manually
+     if manual? [
+      move (heading)
+      set pacman-still-to-move? false]
+
+
+  
+  
+      ;;here are some print statements to show you how to access some useful variables
+    ifelse (number-ghosts-left > 0)
+        [ print ( word "    there are " number-ghosts-left " ghosts left, nearest is at distance " distance-to-nearest-ghost)  ]
+        [ print "    all ghosts eaten"]
+   ifelse (number-ghosts-left > 0)
+        [           print ( word "    there are " number-pellets-left " pellets left, nearest is at distance " distance-to-nearest-pellet)   ]
+        [          print "    all pellets eaten"  ]
+    ifelse (number-ghosts-left > 0)
+        [  print ( word "    there are " number-power-pills-left " power pills  left, nearest is at distance " distance-to-nearest-power-pill) ]
+        [  print "    all power-pills eaten"     ]
+       print (word "   power-up status is " am-i-powered-up?)
+
+  
+  
+  
+  
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; don;t change nything above this line
+;;;;;;  CREATE FSM AND  EXPERT SYSTEM RULES BELOW HERE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  
+  ;;;simple FSM - you can extend this
+  
+  ;;;; variables you might like to consider in selecting states are:
+  ;; number-ghosts-left    int:  number of ghosts left uneaten (of any type)
+   ;; number-pellets-left  int: number of pellets left uneaten
+   ;; number-power-pills-left int: number of power pills left uneaten
+   ;; am-i-powered-up?    bool 
+
+
+
+  print (word "State Flag:" stateflag)
+
+  ;; here are the controllers for the different states
+
+  
+  ; State 1
+    if stateflag = 1
+    [
+        print "In state 1"
+        ; Define no ghost directions
+        let clearDirs []
+        foreach all-directions-north-south-east-west
+        [ dir ->
+          if distance-to-nearest-ghost >= 5
+             and is-direction-clear dir 
+          [set clearDirs lput dir clearDirs]
+        ]
+        
+        ; If ghosts are too close, than switch to state 2
+        ifelse length clearDirs = 0
+        [set stateflag 2]
+        [ ;; else block
+        print clearDirs
+            foreach clearDirs ;; this loops through clear directions
+            [ dir ->
+              ifelse distance-to-nearest-power-pill > 1
+                     and not is-power-pill-in-x-tiles dir 1
+              [
+                 if is-direction-clear dir
+                 [
+                     ifelse is-direction-towards-nearest-pellet dir
+                            and pacman-still-to-move?
+                            and not is-direction-explored dir ;Prefers unexplored dir
+                     [move dir]
+                     [set clearDirs remove dir clearDirs] ;Remove already explored path
+                 ]
+              ]
+              [set clearDirs remove dir clearDirs]
+            ]
+            
+            ;If stuck and everything is explored
+            if length clearDirs = 0 
+            [
+              set stateflag 6
+            ]
+        ]
+    ];;end state 1
+
+    ; state 6
+    ;If stuck somewhere, then we go back by explored path
+    ;until a pellet is found
+    if stateflag = 6
+    [
+      print "In state 6"
+      print word "Behind: " (first behind)
+      
+      let preferedDirections []
+      foreach all-directions-north-south-east-west
+        [ dir ->
+          if is-pellet-in-x-tiles dir 3
+             and pacman-still-to-move?
+             and is-direction-clear dir
+          [
+            set preferedDirections lput dir preferedDirections
+            ;move dir
+            ;set stateflag 1
+            ;stop
+          ]
+        ]
+        print word "Preferred directions: " preferedDirections
+       ifelse length preferedDirections = 0
+       [
+         foreach all-directions-north-south-east-west
+         [ dir ->
+           print word "Direction: " dir
+           print word "Explored?: " is-direction-explored dir
+           print word "Clear?: " is-direction-clear dir
+           print word "Can move?: " pacman-still-to-move?
+           print word "Dir is not behind?: " (dir != behind)
+           if is-direction-explored dir
+              and is-direction-clear dir
+              and pacman-still-to-move?
+              and dir != (first behind) ;Behind is an array
+           [move dir]
+         ]
+         ;If pacman didn't move
+         if pacman-still-to-move?
+         [move (first behind)]
+       ]
+       [
+         foreach preferedDirections 
+         [ dir ->
+           move dir
+           set stateflag 1
+           stop
+         ]
+       ]
+    ];;end state 6
+
+
+
+  ;; state 2
+  ;If atleast one ghost nearby
+    if stateflag = 2 
+    [
+      print "In state 2"
+      
+      foreach all-directions-north-south-east-west
+      [ dir ->
+        if is-direction-away-from-nearest-inedible-ghost dir
+           and is-direction-clear dir
+           and pacman-still-to-move?
+           [move dir]
+      ]
+      ;If all ghosts are far away
+      if distance-to-nearest-ghost >= 5
+      [set stateflag 1]
+      
+      ;If too many ghosts nearby
+      let nearby-ghosts [self] of ghosts with[classify-ghost = "inedible" and eaten? = false]
+      print nearby-ghosts
+      foreach nearby-ghosts
+      [ _ghost ->
+        if distance _ghost >= 5
+        [set nearby-ghosts remove _ghost nearby-ghosts]
+      ]
+      if length nearby-ghosts >= 2
+      [set stateflag 3]
+       
+    ];;end state 2
+    
+    
+    ;; state 3
+    ;If more than 1 ghost is nearby
+    if stateflag = 3
+    [
+      print "In state 3"
+      
+      foreach all-directions-north-south-east-west
+      [ dir ->
+      
+      ]
+    ];;end state 3
+
+
+
+
+ ;; SOME COUNTERS YOU MIGHT CARE ABOUT
+ ;; number-ghosts-left    ;;; number of ghosts left uneaten (of any type)
+  ;;distance-to-nearest-ghost   reports distance to nearest ghost of any type,  or 99 if ther are none left
+ ;; number-pellets-left  ;;number of pellets left uneaten
+   ;;distance-to-nearest-pellet   reports distance to nearest pellet,  or 99 if ther are none left
+;; number-power-pills-left ;;number of power pills left uneaten
+  ;;distance-to-nearest-power-pill   reports distance to nearest power pill,  or 99 if ther are none left
+ ;;pistance-to-pacman
+
+;; CHOICE OF DIRECTIONS
+;; foreach all-directions-north-south-east-west
+;; foreach all-directions-in-random-order
+;; foreach all-directions-ahead-left-right-behind
+;; foreach all-directions-left-ahead-right-behind
+;; foreach all-directions-left-right-ahead-behind
+;; foreach north
+;; foreach south
+;; foreach east
+;; foreach west
+;; foreach ahead
+;; foreach behind
+;; foreach to-left
+;; foreach to-right
+
+;; CONDITION METHODS TO CHOOSE FROM
+
+;;;;;;;;   directions
+;; and is-direction-current-heading (dir)
+;; and is-direction-no-turning-back (dir)
+
+;;;;;;;;;; safety
+;; and is-direction-on-map (dir) ;; am I about to leave the map?
+;; and is-direction-clear (dir) ;; am I about to bump into a wall?
+;; and is-direction-safe (dir) ;; am I about to move onto an inedible ghost?
+
+;;;;;;;;;;; ghosts ahead
+;; and is-direction-with-ghost-ahead (dir);; report true if ANY ghost ahead
+;; and is-direction-with-edible-ghost-ahead (dir) ;; return true if there is an edible ghost ahead, false otherwise
+;; and is-direction-without-inedible-ghost-ahead (dir) ;; report false if there IS an inedible ghost ahead, true otherwise
+;; and is-nearest-ghost-in-this-direction-edible (dir) ;; report false if nearest ghost inedible OR no ghost in this direction, if 2 ghosts on same patch, return true if at least one of them is edible!
+
+;;;;;;;;;; ghosts nearby
+;; and is-direction-nearer-to-edible-ghost (dir)  ;; if you are getting nearer to ANY edible ghost then return true, report false if no edible ghosts left
+;; and is-direction-away-from-all-inedible-ghosts (dir) ;; if you are getting nearer to ANY inedible ghost then return false, if no inedible ghosts left return TRUE
+;; and is-direction-away-from-nearest-inedible-ghost (dir) ;; if you are getting further from nearest inedible ghost then return true; if no inedible ghosts return true
+;; and is-direction-towards-nearest-edible-ghost (dir) ;; if you are getting nearer to nearer edible ghost then return true; if no edible ghosts return false
+
+;; 'manhattan' distances count the number of squares to travel (ignoring walls) but no diagonal movements allowed
+;; and is-direction-nearer-to-edible-ghost-manhattan (dir) ;; use manhattan distance metric; report false if no edible ghosts left
+;; and is-direction-away-from-all-inedible-ghosts-manhattan (dir) ;; uses manhattan metric, if no inedible ghosts left return true
+
+
+;; is-direction-towards-inedible-ghost-closer-than-10  ;;true if the patch in the direction is (i) closer than where we are now and (ii) within distance 10 of an inedible ghost
+
+;;;;;;;;;; look for a particular ghost
+;; and is-direction-nearer-to-next-ghost (dir) ;; report false if no next ghost
+;; and is-direction-nearer-to-next-ghost-manhattan (dir) ;; uses manhattan distance metric; report false if no next ghost
+
+;;;;;;;;;;; looking for pellets
+;; and is-direction-towards-pellet (dir) ;; pellet is in sight
+;; and is-direction-towards-power-pill (dir) ;; power pill is in sight
+;; and is-direction-towards-nearest-power-pill (dir) ;; if no power pills left return false
+;; and is-direction-towards-nearest-pellet (dir) ;; if no pellets left return false
+;; and am-i-powered-up?
+
+;;;;;;;;;; explored
+;; and is-direction-unexplored (dir)
+;; and is-direction-explored (dir)
+;; and is-directions-with-unexplored-patch-ahead (dir)
+;; and is-direction-least-visited (dir) ;; report true if this direction is the LEAST often visited of ALL surrounding patches; don't look at patch pacman is currently on
+;; and is-direction-less-visited (dir) ;; report true if this direction is less visited than CURRENT patch
+
+;; and is-direction-nearer-to-edible-ghost-manhattan (dir)
+;; and is-direction-away-from-all-inedible-ghosts-manhattan (dir)
+
+;; ACTION METHODS TO CHOOSE FROM
+;; [ move (dir) ]
+;; [ move-north ]
+;; [ move-south ]
+;; [ move-east ]
+;; [ move-west ]
+;; [ move-ahead ]
+;; [ move-left ]
+;; [ move-right ]
+;; [ turn-around ]
+
+end
+
+
+
+
+
+to-report choose-ghost
+
+   print "choosing next ghost"
+
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;; make your choice!
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;;let chosen-ghost choose-random-ghost
+     ;;let chosen-ghost choose-nearest-ghost-to-pacman
+     ;;let chosen-ghost choose-furthest-ghost-from-pacman
+     ;;let chosen-ghost choose-random-not-inedible-ghost
+     ;;let chosen-ghost choose-nearest-not-inedible-ghost-to-pacman
+     ;;let chosen-ghost choose-furthest-not-inedible-ghost-from-pacman
+     ;;let chosen-ghost choose-random-edible-ghost
+     let chosen-ghost choose-nearest-edible-ghost-to-pacman
+     ;;let chosen-ghost choose-furthest-edible-ghost-from-pacman
+     ;;let chosen-ghost choose-nearest-ghost-to-pacman-manhattan
+     ;;let chosen-ghost choose-nearest-edible-ghost-to-pacman-manhattan
+     ;;let chosen-ghost choose-furthest-ghost-from-pacman-manhattan
+     ;;let chosen-ghost choose-furthest-edible-ghost-from-pacman-manhattan
+
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;; no need to change any of this
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+     ifelse chosen-ghost = nobody
+        [ print "***********   could not choose a ghost! - checking for pellets"
+          ifelse not any? pellets 
+               [set atgoal? true]
+                [print "ready to eat"]
+         ]
+        [ask chosen-ghost
+           [print (word "********** Heading towards next Ghost " chosen-ghost " at: " xcor ", " ycor)]
+        ]
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+   report chosen-ghost
+
+end
+
+
+to-report is-power-pill-in-x-tiles [direction x]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a pellet OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found? and dist <= x]
+  [
+    ;; filter by pellets
+    let pellets-found (pellets-on p) with [not eaten? and shape = "circle"]
+    ;; we found one!!
+    if (any? pellets-found) [set result true set found? true]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+to-report is-pellet-in-x-tiles [direction x]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a pellet OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found? and dist <= x]
+  [
+    ;; filter by pellets
+    let pellets-found (pellets-on p) with [not eaten? and shape != "circle"]
+    ;; we found one!!
+    if (any? pellets-found) [set result true set found? true]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+

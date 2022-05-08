@@ -1,0 +1,1291 @@
+turtles-own [ home-pos ]
+
+patches-own [ visible? real-pcolor undiscovered num-times-explored]  
+
+;; the order of the breeds is the order they are displayed on screen
+;; ie last breed is one on top
+
+;; pellets
+breed [ pellets pellet]
+pellets-own  [ eaten? edible?]
+
+;; ghosts
+breed [ ghosts ghost ]
+ghosts-own  [ eaten? edible? glasses? ]
+
+;; PACMAN
+breed [ pacmans pacman  ]
+pacmans-own  [ ]
+
+globals [
+  clocktick         ;; for speed of game
+  counter-pacman
+  counter-ghost
+
+  atgoal?        ;; has the pacman eaten all pellets
+
+  score 
+  score-for-ghost 
+  score-for-pellet
+  
+  dead?          ;; is pacman dead?
+  total-dist-travelled ;; how far have you travelled?
+  time           ;; how long have I taken?
+  current-direction ;; what direction are you travelling
+  current-ghost ;; who are we heading towards? 
+  pacman-still-to-move? ;; has pacman chosen direction and moved?
+  ghost-still-to-move? ;; has ghost chosen direction and moved?
+  powered-up? ;; has pacman just eatenn a power pill
+  power-count ;; how long has pacman got left!
+  max-power-count ;; how long does pacman stay powered up
+  stateflag
+ ]
+
+;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Setup Procedures ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; when you press the 'new' button this happens
+to new  ;; Observer Button
+ 
+  clear-all
+  import-world "pacmap_classic.csv"
+
+  set clocktick  0.1
+  ;; speed governs how often you move - fastest is every clocktick; slowest is every other clocktick
+  set counter-pacman 0
+  set counter-ghost 0
+  set stateflag 1 ;;initialise pacman state to 1
+  set atgoal? FALSE
+  set dead? false
+  set current-direction 0
+  set total-dist-travelled 0
+  set time 0
+  
+  set score 0 
+  set score-for-ghost 100
+  set score-for-pellet 1
+    
+  ;; power pills
+  set powered-up? false
+  set power-count 0
+  set max-power-count 50
+       
+  ;; and for random numbers
+  random-seed new-seed
+
+  ask pacmans
+    [ set home-pos list xcor ycor  
+      set dead? false
+      set current-ghost choose-ghost ]
+  ask ghosts
+    [ set home-pos list xcor ycor ]
+
+   ask patches
+   [
+     set undiscovered TRUE
+     set num-times-explored 0]
+
+  refresh
+
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Observer procedures
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to start ;; main entry point
+
+every (clocktick)
+[
+   set time time + 1
+   refresh ;; view
+
+   ifelse atgoal?
+   [ 
+      ask pacman 0 [set shape "face happy"] 
+      display user-message "reached goal" stop
+   ] 
+   ;; else
+   [
+      set counter-pacman counter-pacman + (pacman_speed * clocktick / 100 )
+      
+      if counter-pacman > clocktick [
+        print "here"
+         ask pacman 0 [ pacman-choose-direction-and-move ] refresh
+         ask pacman 0 [consume]
+         if check-if-dead? [stop] ;; to check if I have moved onto a ghost
+         set counter-pacman counter-pacman - clocktick
+      ]
+      set counter-ghost counter-ghost + (ghost_speed * clocktick / 100 )
+      if ghosts-move? and (counter-ghost > clocktick) [
+         ask ghosts 
+          [ ghost-choose-direction-and-move ] 
+        refresh
+        ask pacman 0 [consume]
+        set counter-ghost counter-ghost - clocktick
+      ]
+      if check-if-dead? [stop] ;; to check if a ghost has moved onto me
+   ]
+     
+]
+
+end
+
+
+to-report check-if-dead? 
+   let result false
+   if dead? = true
+     [ display user-message "pacman dead! " 
+       set result true ]
+   report result
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; DON'T EDIT ANYTHING ABOVE THIS LINE                           
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; EDIT 1 - CLASSIFICATION ALGORITHM                           
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to-report classify-ghost
+
+;; additional for power pills
+ifelse powered-up? ;; has pacman eaten a power pill
+   [ report "edible"]
+   [ report "inedible" ]
+   
+; If you have no code this will be returned
+report "not classified"
+
+end
+
+
+;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; to check various directions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to-report is-direction-current-heading [direction]
+  report heading = direction
+end    
+
+to-report is-direction-no-turning-back [direction]
+  report heading != get-opposite (direction)
+end    
+
+to-report is-direction-unexplored [direction]
+  let p (patch-at-heading-and-distance direction 1)
+  report 
+     (not (p = nobody)) and 
+     [real-pcolor] of (patch-at-heading-and-distance direction 1) != green
+end    
+
+to-report is-direction-explored [direction]
+  let p (patch-at-heading-and-distance direction 1)
+  if (p = nobody) [report false] 
+  report [real-pcolor] of (patch-at-heading-and-distance direction 1) = green
+end    
+
+to-report is-direction-on-map [direction]
+  let p (patch-at-heading-and-distance direction 1)
+  if (p = nobody) [report false] 
+  report (patch-at-heading-and-distance direction 1) != nobody
+end
+
+to-report is-direction-clear [direction]
+  let p (patch-at-heading-and-distance direction 1)
+  if (p = nobody) [report false] 
+  report [real-pcolor] of (patch-at-heading-and-distance direction 1) != blue
+end    
+
+to-report is-direction-safe [direction]
+  let p (patch-at-heading-and-distance direction 1)
+  if (p = nobody) [report false] 
+  report not any? (ghosts-on patch-at-heading-and-distance direction 1) with [classify-ghost = "inedible"]
+end    
+
+ ;; report false if no next ghost
+to-report is-direction-nearer-to-next-ghost [direction]
+  if current-ghost = nobody [report false]
+
+  let result false
+  
+  let dist-to-goal distance current-ghost
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask current-ghost [set result (distance p < dist-to-goal) ]
+  
+  report result
+end
+
+;; report false if no next ghost
+to-report is-direction-nearer-to-next-ghost-manhattan [direction]
+  if current-ghost = nobody [report false]
+  let result false
+
+  let dist-to-goal manhattan-turtle-to-turtle (current-ghost) 
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask p [set result (manhattan-patch-to-turtle (current-ghost) < dist-to-goal) ]
+  
+  report result
+end
+
+;; report false if no edible ghosts left
+;; report true if nearer to ANY edible ghost
+to-report is-direction-nearer-to-edible-ghost [direction]
+  let result false
+
+  let edible-ghosts ghosts with[classify-ghost = "edible" and not eaten?]
+  if not any? edible-ghosts [report false]
+
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask edible-ghosts [if distance p < distance pacman 0 [set result true]]
+   
+  report result
+ 
+end
+
+;; report false if no edible ghosts left
+;; report true if nearer to ANY edible ghost
+to-report is-direction-nearer-to-edible-ghost-manhattan [direction]
+  let result false
+
+  let edible-ghosts ghosts with[classify-ghost = "edible" and not eaten?]
+  if not any? edible-ghosts [report false]
+  
+  let pacman-x xcor
+  let pacman-y ycor
+
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  let patch-x 0 let patch-y 0
+  ask p [set patch-x pxcor set patch-y pycor ]
+  ask edible-ghosts [if (manhattan-turtle-xy patch-x patch-y) < (manhattan-turtle-xy pacman-x pacman-y) 
+     [set result true]]
+   
+  report result
+ 
+end
+
+
+;; if you are getting nearer to ANY inedible ghost then return false
+;; if no inedible ghosts eft return TRUE
+to-report is-direction-away-from-all-inedible-ghosts [direction]
+  let result true
+  let inedible-ghosts ghosts with[classify-ghost = "inedible" and not eaten?]
+  if not any? inedible-ghosts [report true]
+
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ;; if you are getting nearer to ANY inedible ghost then return false
+  ask inedible-ghosts [if distance p < distance pacman 0 [set result false]]
+
+  report result  
+end
+
+;; if you are getting nearer to ANY inedible ghost then return false
+;; if no inedible ghosts eft return TRUE
+to-report is-direction-away-from-all-inedible-ghosts-manhattan [direction]
+  let inedible-ghosts ghosts with[classify-ghost = "inedible" and not eaten?]
+  if not any? inedible-ghosts [report true]
+
+  let result true
+
+  let pacman-x xcor
+  let pacman-y ycor
+  
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  let patch-x 0 let patch-y 0
+  ask p [set patch-x pxcor set patch-y pycor ]
+  
+  ;; if you are getting nearer to ANY inedible ghost then return false
+  ask inedible-ghosts [if (manhattan-turtle-xy patch-x patch-y) < (manhattan-turtle-xy pacman-x pacman-y) 
+       [set result false]]
+   
+  report result
+end
+
+;; if you are getting further from nearest inedible ghost then return true
+;; if no inedible ghosts return true
+to-report is-direction-away-from-nearest-inedible-ghost [direction]
+  let inedible-ghosts ghosts with[classify-ghost = "inedible" and not eaten?]
+  if not any? inedible-ghosts [report true]
+  let nearest-inedible-ghost one-of (inedible-ghosts with-min [distance myself] )
+
+  let dist-to-beat distance nearest-inedible-ghost
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting further from this inedible ghost then return true
+  let result false
+  ask nearest-inedible-ghost [if distance p > dist-to-beat [set result true]]
+
+  report result  
+end
+
+;; if you are getting nearer to nearer edible ghost then return true
+;; if no edible ghosts return false
+to-report is-direction-towards-nearest-edible-ghost [direction]
+  let edible-ghosts ghosts with[classify-ghost = "edible" and not eaten?]
+  if not any? edible-ghosts [report false]
+  let nearest-edible-ghost one-of (edible-ghosts with-min [distance myself] )
+
+  let dist-to-beat distance nearest-edible-ghost
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting nearer to this edible ghost then return true
+  let result false
+  ask nearest-edible-ghost [if distance p < dist-to-beat [set result true]]
+
+  report result  
+end
+
+
+;;reporter to say if this is a direction with an indeible ghost at distance 10 or less
+to-report is-direction-towards-inedible-ghost-closer-than-10 [direction]
+
+  ;;create a variable to hold the result
+  let result false
+  
+  ;; make a list of all the inedible ghosts
+  let inedible-ghosts ghosts with[classify-ghost = "inedible" and not eaten?]
+  ; if there aren't any ghosts left the answer is false
+  if not any? inedible-ghosts [report false]
+ 
+  ;;identify the patch one step in the direction we are considering
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;;ask each inedible ghost whether the patch is (i) closer than where we are now and (ii) within distance 10
+  ;;a nd if it is set the result flag to true
+  ask inedible-ghosts 
+    [
+      if (distance p < distance pacman 0 )
+         [
+           if (distance p < 10)
+               [set result true]
+         ]
+    ]
+  
+
+  report result  
+end
+
+
+to-report number-pellets-left
+  
+  ;;make a list of how many are left
+   let uneaten-pellets pellets with [not eaten?] 
+   
+   report count uneaten-pellets
+end
+  
+to-report number-ghosts-left
+   
+   let uneaten-ghosts ghosts with [not eaten?]
+   report count uneaten-ghosts
+  
+  
+end
+
+to-report distance-to-pacman
+ 
+  
+  ifelse not any? pacmans 
+   [
+     ;;report a dummy number if there are none left
+     report 99
+    ]
+    [
+      ;;otherwise get the closest
+      let nearest one-of (pacmans with-min [distance myself] )
+      ;;report its distance
+      report distance nearest
+    ]
+end  
+
+
+to-report distance-to-nearest-ghost
+  ;;make list of uneaten ghosts
+   let uneaten-ghosts ghosts with[ not eaten?]
+  ;;report a dummy number if there are none left
+  if not any? uneaten-ghosts [report 99]
+  ;;otherwise get the closest
+  let nearest-uneaten-ghost one-of (uneaten-ghosts with-min [distance myself] )
+  ;;ask for its distance
+  let dist-to-beat distance nearest-uneaten-ghost
+  
+  report dist-to-beat
+  
+end  
+  
+ to-report distance-to-nearest-pellet
+  ;;make list of uneaten ghosts
+   let uneaten-pellets pellets with[ not eaten?]
+  ;;report a dummy number if there are none left
+  if not any? uneaten-pellets [report 99]
+  ;;otherwise get the closest
+  let nearest-uneaten-pellet one-of (uneaten-pellets with-min [distance myself] )
+  ;;ask for its distance
+  let dist-to-beat distance nearest-uneaten-pellet
+  
+  report dist-to-beat
+  
+end  
+
+to-report distance-to-nearest-power-pill
+  ;;make list of uneaten ghosts
+   let uneaten-pills pellets with [shape = "circle" and not eaten?]
+  ;;report a dummy number if there are none left
+  if not any? uneaten-pills [report 99]
+  ;;otherwise get the closest
+  let nearest-uneaten-pill one-of (uneaten-pills with-min [distance myself] )
+  ;;ask for its distance
+  let dist-to-beat distance nearest-uneaten-pill
+  
+  report dist-to-beat
+  
+end  
+  
+to-report number-power-pills-left
+  
+    ;;make a list of how many are left
+ let power-pills pellets with [shape = "circle" and not eaten?]
+   
+   report count power-pills
+  
+end
+
+to-report is-direction-towards-pellet [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a pellet OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+    ;; filter by pellets
+    let pellets-found (pellets-on p) with [not eaten?]
+    ;; we found one!!
+    if (any? pellets-found) [set result true set found? true]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+to-report is-direction-towards-power-pill [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a pellet OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+    ;; filter by pellets
+    let pellets-found (pellets-on p) with [not eaten? and shape = "circle"]
+    ;; we found one!!
+    if (any? pellets-found) [set result true set found? true]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+;; if no power pills left return false
+to-report is-direction-towards-nearest-power-pill [direction]
+  let power-pills pellets with [shape = "circle" and not eaten?]
+  if not any? power-pills [report false]
+  let nearest-power-pill one-of (power-pills with-min [distance myself] )
+
+  let dist-to-beat distance nearest-power-pill
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting nearer to this power pill then return true
+  let result false
+  ask nearest-power-pill [if distance p < dist-to-beat [set result true]]
+
+  report result    
+end
+
+;; if no pellets left return false
+to-report is-direction-towards-nearest-pellet [direction]
+  let uneaten-pellets pellets with [not eaten?] 
+  if not any? uneaten-pellets [report false]
+  let nearest-pellet one-of (uneaten-pellets with-min [distance myself] )
+
+  let dist-to-beat distance nearest-pellet
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting nearer to this power pill then return true
+  let result false
+  ask nearest-pellet [if distance p < dist-to-beat [set result true]]
+
+  report result    
+end
+
+to-report am-i-powered-up?
+   report powered-up?
+end
+
+;; return true if there is an edible ghost ahead, false otherwise
+to-report is-direction-with-edible-ghost-ahead [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a ghost OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+    ;; filter by edible ghosts
+    let ghosts-found (ghosts-on p) with [classify-ghost = "edible" and not eaten?]
+    ;; we found one!!
+    if (any? ghosts-found) [set result true set found? true]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+;; report false if nearest ghost inedible OR no ghost ion this direction
+;; assume not more than 1 ghost on each patch! If so, result depends on last ghost looked at
+to-report is-nearest-ghost-in-this-direction-edible [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a ghost OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+    ;; filter by edible ghosts
+    let ghosts-found (ghosts-on p) with [not eaten?]
+    if (any? ghosts-found) 
+       ;; we found one!!
+       [ask ghosts-found ;; likely only one ghost here
+          [if classify-ghost = "edible" [set result true]
+           set found? true ] ;; whether ghost is edible or inedible, we stop searching
+       ]
+    ;; OK, keep looking ...                
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+  
+end
+
+;; report false if there IS an inedible ghost ahead, true otherwise 
+to-report is-direction-without-inedible-ghost-ahead [direction]
+  let result true
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a ghost OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+     ;; filter by inedible ghosts
+     let inedible-ghosts-found (ghosts-on p) with [classify-ghost = "inedible"]
+     ;; we found one!! therefore direction is not without inedibale ghost
+     if (any? inedible-ghosts-found) [set result false] 
+     ;; OK, keep looking ...                
+     set dist (dist + 1 )
+     set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+end
+
+
+;; report true if ANY ghost ahead
+to-report is-direction-with-ghost-ahead [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see a ghost OR a wall
+  while [ (not ( p = nobody)) and (not is-wall? p) and not found?]
+  [
+     let ghosts-found (ghosts-on p) 
+     ;; we found one!! 
+     if (any? ghosts-found) [set result  true] 
+     ;; OK, keep looking ...                
+     set dist (dist + 1 )
+     set p patch-at-heading-and-distance direction dist
+  ]
+  report result
+end
+
+
+to-report is-direction-with-unexplored-patch-ahead [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see an unexplored patch OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]        
+  [
+     ask p [
+        if undiscovered = TRUE [ set result  true ]
+     ]
+     ;; OK, keep looking ...                
+     set dist (dist + 1 )
+     set p patch-at-heading-and-distance direction dist
+  ]
+
+  report result
+end
+
+;; report true if this direction is the LEAST often visited of ALL surrounding patches
+;; don't look at patch pacman is currently on
+to-report is-direction-least-visited [direction]
+  let result true
+  let explored-count 0
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+
+  ask p [set explored-count num-times-explored]          
+  
+  foreach (list get-left(direction) get-right(direction) get-opposite (direction))
+    [
+      dir ->
+      let p2 patch-at-heading-and-distance dir 1
+      ask p2 [
+        if num-times-explored < explored-count and is-wall? (p2) = false
+          [set result false ]
+      ]
+    ]
+    
+
+  report result
+end
+
+;; report true if this direction is less visited than CURRENT patch
+to-report is-direction-less-visited [direction]
+  let result false
+
+  let explored-count 0
+  ask patch-here [set explored-count num-times-explored]
+
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask p [if num-times-explored < explored-count [set result true]]            
+
+  report result
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; and for the ghosts !!!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to-report is-direction-nearer-to-pacman [direction]
+  let result false
+
+  let current-dist-to-pacman distance pacman 0
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask pacman 0 [set result distance p < current-dist-to-pacman ]
+   
+  report result
+end
+
+to-report is-direction-further-from-pacman [direction]
+  let result false
+
+  let current-dist-to-pacman distance pacman 0
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  ask pacman 0 [set result distance p > current-dist-to-pacman ]
+   
+  report result
+end
+
+to-report is-direction-pacman-ahead [direction]
+  let result false
+  let dist 1
+  let found? false
+  let p patch-at-heading-and-distance direction dist
+        
+  ;; OK let's look ahead UNTIL we see pacman OR a wall
+  while [ (not (p = nobody)) and (not is-wall? p) and not found?]
+  [
+     let pacmans-found (pacmans-on p)
+     ;; we found one!! 
+     if (any? pacmans-found) [set result true set found? true] 
+     ;; OK, keep looking ...                
+     set dist (dist + 1 )
+     set p patch-at-heading-and-distance direction dist
+  ]
+  report result
+end
+
+
+;; ===========================
+;; To choose a ghost
+;; ===========================
+
+to-report choose-random-ghost
+   report one-of ghosts with [eaten? = false]  
+end
+
+to-report choose-random-edible-ghost
+   report one-of ghosts with [eaten? = false and classify-ghost = "edible"]  
+end
+
+to-report choose-nearest-ghost-to-pacman
+
+   let chosen-ghost nobody
+   if any? ghosts
+      [set chosen-ghost one-of (ghosts with-min [distance pacman 0] )]
+    
+    report chosen-ghost
+    
+end
+
+to-report choose-nearest-edible-ghost-to-pacman
+   let chosen-ghost nobody
+   let edible-ghosts ghosts with [classify-ghost = "edible" and eaten? = false]
+   if any? edible-ghosts
+      [set chosen-ghost one-of (edible-ghosts with-min [distance pacman 0] ) ]
+    
+    report chosen-ghost
+
+end
+
+to-report choose-furthest-ghost-from-pacman
+
+   let chosen-ghost nobody
+   let uneaten-ghosts ghosts with [not eaten?]
+   if any? uneaten-ghosts
+      [set chosen-ghost one-of (uneaten-ghosts with-max [distance pacman 0] )]
+    
+    report chosen-ghost
+end
+
+to-report choose-furthest-edible-ghost-from-pacman
+
+   let chosen-ghost nobody
+   let edible-ghosts ghosts with [classify-ghost = "edible" and eaten? = false]
+   if any? edible-ghosts
+      [set chosen-ghost one-of (edible-ghosts with-max [distance pacman 0] )]
+    
+    report chosen-ghost
+end
+
+to-report choose-random-not-inedible-ghost
+   let chosen-ghost nobody
+   let not-inedible-ghosts ghosts with 
+      [not (classify-ghost = "inedible") and eaten? = false]
+   if any? not-inedible-ghosts
+      [set chosen-ghost one-of not-inedible-ghosts ]
+    
+    report chosen-ghost
+end
+
+to-report choose-nearest-not-inedible-ghost-to-pacman
+
+   let chosen-ghost nobody
+   let not-inedible-ghosts ghosts with [not classify-ghost = "inedible" and eaten? = false]
+   if any? not-inedible-ghosts
+      [set chosen-ghost one-of (not-inedible-ghosts with-min [distance pacman 0] )]
+    
+    report chosen-ghost
+end
+
+to-report choose-furthest-not-inedible-ghost-from-pacman
+
+   let chosen-ghost nobody
+   let not-inedible-ghosts ghosts with [not classify-ghost = "inedible" and eaten? = false]
+   if any? not-inedible-ghosts
+      [set chosen-ghost one-of (not-inedible-ghosts with-max [distance pacman 0] )]
+    
+    report chosen-ghost
+end
+
+to-report choose-nearest-ghost-to-pacman-manhattan
+   let chosen-ghost nobody
+   if any? ghosts
+      [set chosen-ghost one-of (ghosts with-min [manhattan-turtle-to-turtle pacman 0] )]
+    
+    report chosen-ghost    
+end
+
+to-report choose-nearest-edible-ghost-to-pacman-manhattan
+
+   let chosen-ghost nobody
+   let edible-ghosts ghosts with [classify-ghost = "edible" and eaten? = false]
+   if any? edible-ghosts
+      [set chosen-ghost one-of (edible-ghosts with-min [manhattan-turtle-to-turtle pacman 0] )]
+    
+    report chosen-ghost
+
+end
+
+to-report choose-furthest-ghost-from-pacman-manhattan
+   let chosen-ghost nobody
+   if any? ghosts
+      [set chosen-ghost one-of (ghosts with-max [manhattan-turtle-to-turtle pacman 0] )]
+    
+    report chosen-ghost
+end
+
+to-report choose-furthest-edible-ghost-from-pacman-manhattan
+   let chosen-ghost nobody
+   let edible-ghosts ghosts with [classify-ghost = "edible" and eaten? = false]
+   if any? edible-ghosts
+      [set chosen-ghost one-of (edible-ghosts with-max [manhattan-turtle-to-turtle pacman 0] )]
+    
+    report chosen-ghost
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; TODO - ADD OTHER METHODS as requiired
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; ===========================
+;; To handle lists
+;; ===========================
+
+;; merge lists together, report only members in both lists
+to-report intersection [list1 list2]
+type "list 1 is " print list1
+type "list 2 is " print list2
+  let intersect  list1
+  foreach list1
+  [
+    mem ->
+    print mem
+  ]
+type "intersection is " print intersect  
+   report  intersect
+end
+
+;; merge lists together and remove duplicates
+to-report union [list1 list2]
+
+  let result sentence list1 list2
+  report remove-duplicates result
+end
+
+to-report all-directions-north-south-east-west
+   report (list 0 180 90 270)
+end
+
+to-report all-directions-ahead-left-right-behind
+   report (list heading get-left (heading) get-right (heading) 
+                 get-opposite (heading) )
+end
+
+to-report all-directions-left-ahead-right-behind
+   report (list get-left (heading) heading get-right (heading) 
+                 get-opposite (heading) )
+end
+
+to-report all-directions-left-right-ahead-behind
+   report (list get-left (heading) get-right (heading) heading 
+                 get-opposite (heading) )
+end
+
+to-report all-directions-in-random-order
+   report shuffle (list 0 90 180 270)
+end
+
+to-report ahead
+   report (list heading)
+end
+
+to-report behind
+   report (list (get-opposite (heading) ))
+end
+
+to-report to-left
+   report (list get-left (heading) )
+end
+
+to-report to-right
+   report (list get-right (heading) )
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Distance Metrics
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to-report manhattan-turtle-xy [x y]
+   report abs (xcor - x) + abs (ycor - y) 
+end
+
+to-report manhattan-patch-xy [x y]
+   report abs (pxcor - x) + abs (pycor - y) 
+end
+
+to-report manhattan-turtle-to-turtle [other-turtle]
+   let my-x xcor
+   let my-y ycor
+   let dist 0
+   if (other-turtle != nobody)
+      [ask other-turtle [set dist ( abs (xcor - my-x) + abs (ycor - my-y) )] ]
+   report dist
+end
+
+to-report manhattan-patch-to-turtle [target-turtle]
+   let my-x pxcor
+   let my-y pycor
+   let dist 0
+   if (target-turtle != nobody)
+      [ask target-turtle [set dist ( abs (xcor - my-x) + abs (ycor - my-y) )] ]
+   report dist
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; Action methods
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; no AI in this bit
+
+to move-pacman
+      print (word "pacman at " xcor ", " ycor ": moving in direction " heading)       
+      animate
+      step-forward-and-colour-trail
+      ;; consume ;; now done outside this method
+      
+      set pacman-still-to-move? false
+end
+
+to move-ghost [direction]
+   set heading direction
+   fd 1
+   set ghost-still-to-move? false
+end
+
+to move [direction]
+   set heading direction
+   move-pacman
+end
+
+to move-north
+   set heading 0
+   move-pacman
+end
+
+to move-south
+   set heading 180
+   move-pacman
+end
+
+to move-east
+   set heading 90
+   move-pacman
+end
+
+to move-west
+   set heading 270
+   move-pacman
+end
+
+to move-ahead
+  move-pacman
+end
+
+to move-left
+   left 90
+   move-pacman
+end
+
+to move-right
+   right 90
+   move-pacman
+end
+
+to turn-around
+   set heading get-opposite (heading)
+   move-pacman
+end
+
+to animate
+  ;;set color yellow
+  ifelse shape = "pacman"
+    [set shape  "pacman open"]
+    [set shape "pacman"]
+  display
+end
+
+to consume  ;; Pacman Procedure
+
+  ;;Ghosts
+  ;; edible ghosts - yum
+  let edible-ghosts ghosts-here with [edible? and not eaten?] 
+  if any? edible-ghosts 
+    [ ask edible-ghosts
+        [ set eaten? true 
+          hide-turtle ] ;;set shape "eyes"
+      set score score + score-for-ghost
+      set current-ghost choose-ghost
+    ]
+    
+ ;; oops tried to eat a non edible ghost
+ if any? ghosts-here with [not eaten?]
+   [ user-message " oops tried to eat a non edible ghost "
+     set shape "face sad"
+     ask ghosts-here with [not eaten?] [hide-turtle]
+     set dead? true ]
+
+ let any-pellets pellets-here with [edible? and not eaten? ]
+ if any? any-pellets
+ [
+   ask any-pellets
+   [
+     if (shape = "circle" ) [
+        set powered-up? true 
+        set power-count max-power-count
+        ask ghosts [set shape "scared" set edible? true]
+        set current-ghost choose-ghost
+     ]
+     set eaten? true
+     set score score + score-for-pellet
+     hide-turtle
+   ]
+   ;; if eaten them all then you are done
+   if not any? pellets with [not eaten? ] 
+      [set atgoal? true]
+
+ ]
+     
+ 
+end
+  
+to step-forward-and-colour-trail
+  ifelse can-go-forward?
+  [
+   ask patch-here
+   [
+      set real-pcolor green    
+      set undiscovered FALSE
+      set num-times-explored num-times-explored + 1
+   ]
+   fd 1
+   ;; update goal distance
+   set total-dist-travelled (total-dist-travelled + 1)
+   if powered-up?
+   [
+     set power-count power-count - 1
+     if power-count < (max-power-count / 2)
+     [ ask ghosts [ifelse shape = "scared" 
+                     [ set shape "ghost" ]
+                     [ set shape "scared" ]
+                  ]
+       if power-count = 0
+         [ set powered-up? false
+           ask ghosts [set shape "ghost" set edible? false]
+           set current-ghost choose-ghost ;; assume no ghosts are edible!
+         ]
+     ]
+   ]
+           
+  ]
+  [if not manual? [user-message "OUCH! Hit a wall!"]]
+end
+       
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; these are a bunch of useful tests   
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to-report is-wall? [p]
+   if p = nobody [report false]
+   report [real-pcolor] of p = blue
+end
+
+to-report can-go-forward?
+   let next-patch patch-at-heading-and-distance heading 1
+   
+   ;; patch must exist and not be wall 
+   if next-patch = nobody [report false]
+   if is-wall? next-patch [report false]
+   
+   ;; must be OK - might be a ghost though!
+   report true
+end
+
+to-report get-opposite [direction]
+   let result 0
+   if direction = 0 [set result 180]
+   if direction = 90 [set result 270]
+   if direction = 180 [set result 0]
+   if direction = 270 [set result 90]
+   report result
+end
+
+to-report get-left [direction]
+   let result 0
+   if direction = 0 [set result 270]
+   if direction = 90 [set result 0]
+   if direction = 180 [set result 90]
+   if direction = 270 [set result 180]
+   report result
+end
+
+to-report get-right [direction]
+   let result 0
+   if direction = 0 [set result 90]
+   if direction = 90 [set result 180]
+   if direction = 180 [set result 270]
+   if direction = 270 [set result 0]
+   report result
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Interface Procedures ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to manual-north
+   ask pacman 0 [set heading 0]
+end
+
+to manual-east
+   ask pacman 0 [set heading 90]
+end
+
+to manual-south
+   ask pacman 0 [set heading 180]
+end
+
+to manual-west
+   ask pacman 0 [set heading 270]
+end
+
+to set-visibility ;; Observer Proceedure
+      ask pacmans
+           [
+            ;; maze in front
+            if (patch-left-and-ahead 45 1 != nobody )
+               [ ask patch-left-and-ahead 45 1
+                  [set visible? TRUE] ]
+            if ( patch-ahead 1  != nobody)
+              [ ask patch-ahead 1 
+                [set visible? TRUE] ]
+            if ( patch-right-and-ahead 45 1  != nobody)
+              [ ask patch-right-and-ahead 45 1 
+                [set visible? TRUE] ]
+            ;; sides     
+            if ( patch-left-and-ahead 90 1 != nobody)
+              [ ask patch-left-and-ahead 90 1 
+                [set visible? TRUE] ]
+            if (patch-right-and-ahead 90 1 != nobody )
+              [ ask patch-right-and-ahead 90 1 
+                [set visible? TRUE] ] 
+          ]
+      ask patches
+         [
+             set pcolor real-pcolor    
+         ]
+end
+
+to refresh
+   set-visibility
+   display
+end
+
+; *** NetLogo 4.0.4 Model Copyright Notice ***
+;
+; This model was created as part of the projects:
+; PARTICIPATORY SIMULATIONS: NETWORK-BASED DESIGN FOR SYSTEMS LEARNING IN
+; CLASSROOMS and/or INTEGRATED SIMULATION AND MODELING ENVIRONMENT.
+; The project gratefully acknowledges the support of the
+; National Science Foundation (REPP & ROLE programs) --
+; grant numbers REC #9814682 and REC-0126227.
+;
+; Copyright 2001 by Uri Wilensky.  All rights reserved.
+;
+; Permission to use, modify or redistribute this model is hereby granted,
+; provided that both of the following requirements are followed:
+; a) this copyright notice is included.
+; b) this model will not be redistributed for profit without permission
+;    from Uri Wilensky.
+; Contact Uri Wilensky for appropriate licenses for redistribution for
+; profit.
+;
+; To refer to this model in academic publications, please use:
+; Wilensky, U. (2001).  NetLogo Pac-Man model.
+; http://ccl.northwestern.edu/netlogo/models/Pac-Man.
+; Center for Connected Learning and Computer-Based Modeling,
+; Northwestern University, Evanston, IL.
+;
+; In other publications, please use:
+; Copyright 2001 Uri Wilensky.  All rights reserved.
+; See http://ccl.northwestern.edu/netlogo/models/Pac-Man
+; for terms of use.
+;
+; *** End of NetLogo 4.0.4 Model Copyright Notice ***
+
+
+
+;*******UWE copyright notice**************
+;
+;copyright 2009 Jim Smith.
+; This model is is a simple adaptation of the original Pac-Man model referrred to above.
+; The principal modification is that the maze starts off all grey until it is uncovered as it is explored by the pacman
+; Because the emphasis is on search and maze discovery,  the ghosts have all been disabled 
+;
+;
+;
+;
+;****end of UWE copyright notice
+
+
+
+
+; *** NetLogo 4.0.4 Model Copyright Notice ***
+;
+; This model was created as part of the projects:
+; PARTICIPATORY SIMULATIONS: NETWORK-BASED DESIGN FOR SYSTEMS LEARNING IN
+; CLASSROOMS and/or INTEGRATED SIMULATION AND MODELING ENVIRONMENT.
+; The project gratefully acknowledges the support of the
+; National Science Foundation (REPP & ROLE programs) --
+; grant numbers REC #9814682 and REC-0126227.
+;
+; Copyright 2001 by Uri Wilensky.  All rights reserved.
+;
+; Permission to use, modify or redistribute this model is hereby granted,
+; provided that both of the following requirements are followed:
+; a) this copyright notice is included.
+; b) this model will not be redistributed for profit without permission
+;    from Uri Wilensky.
+; Contact Uri Wilensky for appropriate licenses for redistribution for
+; profit.
+;
+; To refer to this model in academic publications, please use:
+; Wilensky, U. (2001).  NetLogo Pac-Man model.
+; http://ccl.northwestern.edu/netlogo/models/Pac-Man.
+; Center for Connected Learning and Computer-Based Modeling,
+; Northwestern University, Evanston, IL.
+;
+; In other publications, please use:
+; Copyright 2001 Uri Wilensky.  All rights reserved.
+; See http://ccl.northwestern.edu/netlogo/models/Pac-Man
+; for terms of use.
+;
+; *** End of NetLogo 4.0.4 Model Copyright Notice ***

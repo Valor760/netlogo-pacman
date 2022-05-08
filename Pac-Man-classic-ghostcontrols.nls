@@ -1,0 +1,127 @@
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ghost movement
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to ghost-choose-direction-and-move
+   
+   set ghost-still-to-move? true
+   ;; print statement below shows you some variables you might want i.e. who and distance-to-pacman
+   
+   ;;print ( word " ghost " who word  " distance to pacman is  "  distance-to-pacman   )
+
+   ;; inedible ghosts chase pacman if possible   
+   foreach all-directions-north-south-east-west
+   [
+    dir ->
+      if ghost-still-to-move?
+         and inedible-ghosts-chase-pacman?
+         and not edible?
+         and is-direction-clear (dir) 
+         and is-direction-pacman-ahead (dir) 
+      [move-ghost (dir) ]
+   ]
+
+   ;; edible ghosts flee pacman if possible
+   foreach all-directions-north-south-east-west
+   [
+     dir ->
+      if ghost-still-to-move?
+         and edible-ghosts-flee-pacman?
+         and edible?
+         and is-direction-clear (dir) 
+         and is-direction-pacman-ahead ( get-opposite (dir)) 
+      [move-ghost (dir) ]
+   ]
+   
+   ;; otherwise, move ahead if you can
+   foreach ahead
+   [
+    dir ->
+      if ghost-still-to-move?
+         and is-direction-current-heading (dir) 
+         and is-direction-clear (dir) 
+      [move-ghost (dir) ]
+   ]
+
+   ;; else move randomly
+   foreach all-directions-in-random-order
+   [
+    dir ->
+      if ghost-still-to-move?
+         and is-direction-clear (dir) 
+      [move-ghost (dir) ]
+   ]
+
+
+;; CHOICE OF DIRECTIONS
+;; foreach all-directions-north-south-east-west
+;; foreach all-directions-in-random-order
+;; foreach north
+;; foreach south
+;; foreach east
+;; foreach west
+;; foreach ahead
+;; foreach behind
+;; foreach to-left
+;; foreach to-right
+
+;; CONDITION METHODS TO CHOOSE FROM 
+;; and is-direction-current-heading (?) 
+;; and is-direction-no-turning-back (?)
+;; and is-direction-on-map (?)
+;; and is-direction-clear (?)
+;; and is-direction-pacman-ahead (?) 
+
+;; ACTION METHODS TO CHOOSE FROM
+;; [ move (?) ]
+;; [ move-north ]
+;; [ move-south ]
+;; [ move-east ]
+;; [ move-west ]
+;; [ move-ahead ]
+;; [ move-left ]
+;; [ move-right ]
+;; [ turn-around ]
+
+end
+
+
+
+;;;;;;;;;;
+
+; *** NetLogo 4.0.4 Model Copyright Notice ***
+;
+; This model was created as part of the projects:
+; PARTICIPATORY SIMULATIONS: NETWORK-BASED DESIGN FOR SYSTEMS LEARNING IN
+; CLASSROOMS and/or INTEGRATED SIMULATION AND MODELING ENVIRONMENT.
+; The project gratefully acknowledges the support of the
+; National Science Foundation (REPP & ROLE programs) --
+; grant numbers REC #9814682 and REC-0126227.
+;
+; Copyright 2001 by Uri Wilensky.  All rights reserved.
+;
+; Permission to use, modify or redistribute this model is hereby granted,
+; provided that both of the following requirements are followed:
+; a) this copyright notice is included.
+; b) this model will not be redistributed for profit without permission
+;    from Uri Wilensky.
+; Contact Uri Wilensky for appropriate licenses for redistribution for
+; profit.
+;
+; To refer to this model in academic publications, please use:
+; Wilensky, U. (2001).  NetLogo Pac-Man model.
+; http://ccl.northwestern.edu/netlogo/models/Pac-Man.
+; Center for Connected Learning and Computer-Based Modeling,
+; Northwestern University, Evanston, IL.
+;
+; In other publications, please use:
+; Copyright 2001 Uri Wilensky.  All rights reserved.
+; See http://ccl.northwestern.edu/netlogo/models/Pac-Man
+; for terms of use.
+;
+; *** End of NetLogo 4.0.4 Model Copyright Notice ***
+
+
+;;;copyright Jim Smith UWE 2016
