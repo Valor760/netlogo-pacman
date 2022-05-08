@@ -101,31 +101,34 @@ to pacman-choose-direction-and-move
     if stateflag = 6
     [
       print "In state 6"
-      print word "Behind: " (first behind)
+      ;print word "Behind: " (first behind)
       
       let preferedDirections []
+      
+      ifelse number-of-ghosts-in-radius 5 > 1
+      [set stateflag 2]
+      [
       foreach all-directions-north-south-east-west
         [ dir ->
-          if is-pellet-in-x-tiles dir 3
-             and pacman-still-to-move?
+          if ;is-pellet-in-x-tiles dir 3
+             pacman-still-to-move?
              and is-direction-clear dir
-          [
-            set preferedDirections lput dir preferedDirections
-            ;move dir
-            ;set stateflag 1
-            ;stop
-          ]
+             and not is-power-pill-in-x-tiles dir 1
+             and not is-direction-with-ghost-ahead dir
+             and is-direction-clear dir
+             and dir != (first behind)
+          [set preferedDirections lput dir preferedDirections]
         ]
-        print word "Preferred directions: " preferedDirections
+       print word "Preferred directions: " preferedDirections
        ifelse length preferedDirections = 0
        [
          foreach all-directions-north-south-east-west
          [ dir ->
-           print word "Direction: " dir
-           print word "Explored?: " is-direction-explored dir
-           print word "Clear?: " is-direction-clear dir
-           print word "Can move?: " pacman-still-to-move?
-           print word "Dir is not behind?: " (dir != behind)
+           ;print word "Direction: " dir
+           ;print word "Explored?: " is-direction-explored dir
+           ;print word "Clear?: " is-direction-clear dir
+           ;print word "Can move?: " pacman-still-to-move?
+           ;print word "Dir is not behind?: " (dir != behind)
            if is-direction-explored dir
               and is-direction-clear dir
               and pacman-still-to-move?
@@ -139,10 +142,20 @@ to pacman-choose-direction-and-move
        [
          foreach preferedDirections 
          [ dir ->
-           move dir
-           set stateflag 1
-           stop
+           ifelse is-pellet-in-x-tiles dir 3
+           [
+             if pacman-still-to-move?
+             [
+               move dir
+               set stateflag 1
+             ]
+           ]
+           [
+             if pacman-still-to-move?
+             [move dir]
+           ]
          ]
+       ]
        ]
     ];;end state 6
 
@@ -159,21 +172,23 @@ to pacman-choose-direction-and-move
         if is-direction-away-from-nearest-inedible-ghost dir
            and is-direction-clear dir
            and pacman-still-to-move?
+           and not is-power-pill-in-x-tiles dir 1
            [move dir]
       ]
       ;If all ghosts are far away
-      if distance-to-nearest-ghost >= 5
+      if number-of-ghosts-in-radius 5 = 0
       [set stateflag 1]
       
       ;If too many ghosts nearby
-      let nearby-ghosts [self] of ghosts with[classify-ghost = "inedible" and eaten? = false]
-      print nearby-ghosts
-      foreach nearby-ghosts
-      [ _ghost ->
-        if distance _ghost >= 5
-        [set nearby-ghosts remove _ghost nearby-ghosts]
-      ]
-      if length nearby-ghosts >= 2
+      ;let nearby-ghosts [self] of ghosts with[classify-ghost = "inedible" and eaten? = false]
+      ;print nearby-ghosts
+      ;foreach nearby-ghosts
+      ;[ _ghost ->
+      ;  if distance _ghost >= 5
+      ; [set nearby-ghosts remove _ghost nearby-ghosts]
+      ;]
+      ;print word "Num of ghosts nearby: " number-of-ghosts-in-radius 5
+      if number-of-ghosts-in-radius 5 >= 2
       [set stateflag 3]
        
     ];;end state 2
@@ -185,9 +200,62 @@ to pacman-choose-direction-and-move
     [
       print "In state 3"
       
+      ;Define all ghosts and all power-pills
+      let power-pills [self] of pellets with [shape = "circle" and not eaten?]
+      let all-ghosts [self] of ghosts with[classify-ghost = "inedible" and eaten? = false]
+      
+      
+      ;If number of nearby ghosts is <2, drop to the state 2
+      ;let nearby-ghosts []
+      ;foreach all-ghosts
+      ;[ _ghost ->
+      ;  if distance _ghost < 5
+      ;  [set nearby-ghosts lput _ghost nearby-ghosts]
+      ;]
+      if number-of-ghosts-in-radius 5 < 2
+      [set stateflag 2]
+      
+      
+      ;We never have situation that there is a ghost range of EVERY pill
+      ;Otherwise we shouldn't be in this state
+      let preferred-pill first power-pills
+      foreach power-pills
+      [ pill ->
+        let good-pill? true
+        foreach all-ghosts
+        [ _ghost ->
+          ;print (word "   Distance pill: " distance pill "\n   Distance ghost: " distance _ghost)
+          ;print (word "Pill: " pill "\nDistance to ghost:" abs(distance _ghost - distance pill))
+          if abs(distance _ghost - distance pill) < 3
+          [set good-pill? false]
+        ]
+        
+        ;If pill is safe and closer than preferred one, set new pill
+        if good-pill?
+           and distance preferred-pill > distance pill
+        [set preferred-pill pill]
+      ]
+      
       foreach all-directions-north-south-east-west
       [ dir ->
-      
+        let dir-safe? true
+        
+        foreach all-ghosts
+        [ _ghost ->
+          ;Check only close ghosts
+          if distance _ghost < 5
+          [
+            ;If we are getting closer to ghost, than false
+            if not is-direction-away-from-x-inedible-ghost dir _ghost
+               and not is-direction-towards-particular-power-pill dir preferred-pill
+            [set dir-safe? false]
+          ]
+        ]
+        
+        if dir-safe?
+           and pacman-still-to-move?
+           and is-direction-clear dir
+        [move dir]
       ]
     ];;end state 3
 
@@ -370,6 +438,44 @@ to-report is-pellet-in-x-tiles [direction x]
 
   report result
   
+end
+
+;; if you are getting further from PARTICULAR inedible ghost then return true
+;; if no inedible ghosts return true
+to-report is-direction-away-from-x-inedible-ghost [direction _ghost]
+  let dist-to-beat distance _ghost
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting further from this inedible ghost then return true
+  let result false
+  ask _ghost [if distance p > dist-to-beat [set result true]]
+
+  report result  
+end
+
+
+to-report is-direction-towards-particular-power-pill [direction pill]
+  let dist-to-beat distance pill
+  let p patch-at-heading-and-distance direction 1
+  if (p = nobody) [report false] 
+  
+  ;; if you are getting nearer to this power pill then return true
+  let result false
+  ask pill [if distance p < dist-to-beat [set result true]]
+
+  report result    
+end
+
+to-report number-of-ghosts-in-radius [radius]
+  let nearby-ghosts [self] of ghosts with[classify-ghost = "inedible" and eaten? = false]
+  foreach nearby-ghosts
+  [ _ghost ->
+    if distance _ghost > radius
+      [set nearby-ghosts remove _ghost nearby-ghosts]
+  ]
+  
+  report length nearby-ghosts
 end
 
 

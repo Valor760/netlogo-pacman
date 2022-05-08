@@ -154,7 +154,7 @@ ghost_speed
 ghost_speed
 1
 100
-65.0
+55.0
 1
 1
 NIL
@@ -187,7 +187,7 @@ NIL
 T
 OBSERVER
 NIL
-J
+A
 NIL
 NIL
 1
@@ -204,7 +204,7 @@ NIL
 T
 OBSERVER
 NIL
-L
+D
 NIL
 NIL
 1
@@ -221,7 +221,7 @@ NIL
 T
 OBSERVER
 NIL
-I
+W
 NIL
 NIL
 1
@@ -238,7 +238,7 @@ NIL
 T
 OBSERVER
 NIL
-K
+S
 NIL
 NIL
 1
