@@ -58,7 +58,7 @@ to pacman-choose-direction-and-move
         print "In state 1"
         ; Define no ghost directions
         let clearDirs []
-        foreach all-directions-north-south-east-west
+        foreach all-directions-in-random-order
         [ dir ->
           if distance-to-nearest-ghost >= 5
              and is-direction-clear dir 
@@ -105,10 +105,10 @@ to pacman-choose-direction-and-move
       
       let preferedDirections []
       
-      ifelse number-of-ghosts-in-radius 5 > 1
+      ifelse number-of-ghosts-in-radius 5 >= 1
       [set stateflag 2]
       [
-      foreach all-directions-north-south-east-west
+      foreach all-directions-in-random-order
         [ dir ->
           if ;is-pellet-in-x-tiles dir 3
              pacman-still-to-move?
@@ -122,7 +122,7 @@ to pacman-choose-direction-and-move
        print word "Preferred directions: " preferedDirections
        ifelse length preferedDirections = 0
        [
-         foreach all-directions-north-south-east-west
+         foreach all-directions-in-random-order
          [ dir ->
            ;print word "Direction: " dir
            ;print word "Explored?: " is-direction-explored dir
@@ -167,7 +167,7 @@ to pacman-choose-direction-and-move
     [
       print "In state 2"
       
-      foreach all-directions-north-south-east-west
+      foreach all-directions-in-random-order
       [ dir ->
         if is-direction-away-from-nearest-inedible-ghost dir
            and is-direction-clear dir
@@ -188,7 +188,7 @@ to pacman-choose-direction-and-move
       ; [set nearby-ghosts remove _ghost nearby-ghosts]
       ;]
       ;print word "Num of ghosts nearby: " number-of-ghosts-in-radius 5
-      if number-of-ghosts-in-radius 5 >= 2
+      if number-of-ghosts-in-radius 5 >= 1
       [set stateflag 3]
        
     ];;end state 2
@@ -212,50 +212,93 @@ to pacman-choose-direction-and-move
       ;  if distance _ghost < 5
       ;  [set nearby-ghosts lput _ghost nearby-ghosts]
       ;]
-      if number-of-ghosts-in-radius 5 < 2
+      ifelse number-of-ghosts-in-radius 5 < 2
       [set stateflag 2]
       
-      
+      [
       ;We never have situation that there is a ghost range of EVERY pill
       ;Otherwise we shouldn't be in this state
       let preferred-pill first power-pills
       foreach power-pills
       [ pill ->
         let good-pill? true
+        
+        ;let nearest-ghost one-of (all-ghosts with-min [distance pill] )
+        let ghost-distance-to-pill 99 
+        
         foreach all-ghosts
         [ _ghost ->
           ;print (word "   Distance pill: " distance pill "\n   Distance ghost: " distance _ghost)
           ;print (word "Pill: " pill "\nDistance to ghost:" abs(distance _ghost - distance pill))
-          if abs(distance _ghost - distance pill) < 3
-          [set good-pill? false]
+          ;if abs(distance _ghost - distance pill) < 3
+          ;[set good-pill? false]
+          
+          ;Find the closest ghost to the pill
+          let x [distance pill] of _ghost
+          if x < ghost-distance-to-pill
+          [set ghost-distance-to-pill x]
         ]
+        
+        ;print word "Distance from nearest ghost to pill: " distance-to-pill
+        ;If ghost is near to pill, but pacman not, than forget about that pill
+        ;FIXME: Should it check that ghost is closer to pill than we are?
+        if ghost-distance-to-pill < 3
+           and not (distance pill < 3)
+        [set good-pill? false]
         
         ;If pill is safe and closer than preferred one, set new pill
         if good-pill?
-           and distance preferred-pill > distance pill
+           and distance pill < distance preferred-pill
         [set preferred-pill pill]
       ]
       
-      foreach all-directions-north-south-east-west
+      
+      let safe-dirs []
+      foreach all-directions-in-random-order
       [ dir ->
         let dir-safe? true
+        print word "Direction check: " dir
         
         foreach all-ghosts
         [ _ghost ->
-          ;Check only close ghosts
-          if distance _ghost < 5
+          ;Check only close ghosts to pacman
+          if distance _ghost <= 5
           [
+          print word "Is direction clear?: " (is-direction-clear dir)
             ;If we are getting closer to ghost, than false
-            if not is-direction-away-from-x-inedible-ghost dir _ghost
-               and not is-direction-towards-particular-power-pill dir preferred-pill
+          print word "Is away?: " is-this-path-away-from-ghost _ghost dir
+            if ;not is-this-path-away-from-ghost _ghost dir 
+               not is-direction-away-ghost-manhattan dir _ghost
+               ;and not is-direction-towards-particular-power-pill dir preferred-pill
+               or is-direction-with-ghost-ahead dir
+               or not is-direction-clear dir
             [set dir-safe? false]
           ]
         ]
         
+        ;if is-power-pill-in-x-tiles first heading 1
+        ;   and pacman-still-to-move?
+        ;   and number-of-ghosts-in-radius 3 >= 2
+        ;[move first heading]
+        print word "Is it safe?: " dir-safe?
         if dir-safe?
-           and pacman-still-to-move?
-           and is-direction-clear dir
-        [move dir]
+        [set safe-dirs lput dir safe-dirs]
+      ]
+      print safe-dirs
+      ifelse length safe-dirs = 0
+      [
+        foreach all-directions-in-random-order
+        [ dir ->
+          if is-direction-towards-particular-power-pill dir preferred-pill
+             and not is-direction-with-ghost-ahead dir
+             and pacman-still-to-move?
+             and not is-power-pill-in-x-tiles dir 1
+             and is-direction-clear dir
+             [print word "Moving in " dir
+             move dir]
+        ]
+      ]
+      [move first shuffle safe-dirs]
       ]
     ];;end state 3
 
@@ -478,4 +521,112 @@ to-report number-of-ghosts-in-radius [radius]
   report length nearby-ghosts
 end
 
+to-report is-this-path-away-from-ghost [_ghost head_dir]
+  let num-of-tiles 0
+  let dist 1
+  let p patch-at-heading-and-distance head_dir dist
+  let curr_dist distance _ghost
+  let result false
+  
+  while [ (not (p = nobody)) and (not is-wall? p) and not result]
+  [
+    if [distance p] of _ghost > curr_dist
+    [set result true]
+               
+    set dist (dist + 1 )
+    set p patch-at-heading-and-distance head_dir dist
+  ]
+  report result
+
+end
+
+to-report is-direction-away-ghost-manhattan [direction _ghost]
+  let result true
+
+  let pacman-x xcor
+  let pacman-y ycor
+  
+  let p patch-at-heading-and-distance direction 0
+  if (p = nobody) [report false] 
+  let patch-x 0 let patch-y 0
+  ask p [set patch-x pxcor set patch-y pycor ]
+  
+  ;; if you are getting nearer to an inedible ghost then return false
+  ask _ghost [if (manhattan-turtle-xy patch-x patch-y) < (manhattan-turtle-xy pacman-x pacman-y) 
+       [set result false]]
+  
+  ;If we are close, than check maybe there is a wall between?
+  if not result
+  [
+    let ghost-x [xcor] of _ghost
+    let ghost-y [ycor] of _ghost
+    
+    let dist 1
+    
+    let is-on-one-line-with-ghost? false
+    ;and not (patch-x = ghost-x or patch-y = ghost-y)
+    while [ (not (p = nobody)) and not result and not is-on-one-line-with-ghost?]
+    [
+      ;There is a wall, we are safe(probably)
+      if is-wall? p
+      [set result true]
+      
+      if patch-x = ghost-x
+         or patch-y = ghost-y
+      [set is-on-one-line-with-ghost? true]
+      
+      set dist (dist + 1 )
+      set p patch-at-heading-and-distance direction dist
+      ask p [set patch-x pxcor set patch-y pycor]
+    ]
+    
+    if not result
+       and is-on-one-line-with-ghost?
+    [
+      let increment 1
+      let dir-to-ghost 0
+      ifelse patch-x = ghost-x
+      [set dir-to-ghost dir-to-ghost-x patch-x ghost-x]
+      [set dir-to-ghost dir-to-ghost-y patch-y ghost-y]
+      
+      if dir-to-ghost = 180
+         or dir-to-ghost = 270
+      [set increment -1]
+      
+      let wall false
+      while [(not (patch-x - ghost-x = 0) and not (patch-y - ghost-y = 0)) or not wall]
+      [
+        ;let dist-to-patch-from-pacman sqrt((abs(pacman-x - ghost-x + 1) ^ 2) + (abs(ghost-y - pacman-y + 1) ^ 2))
+        ;let angle 0
+        
+        ifelse patch-x = ghost-x
+        [set patch-y (patch-y + increment)]
+        [set patch-x (patch-x + increment)]
+        
+        ask patch patch-x patch-y [if is-wall? myself
+          [set wall true]]
+      ]
+      if wall
+      [set result true]
+    ]
+  ]
+   
+  report result
+end
+
+to-report dir-to-ghost-x [cur-x ghost-x]
+  let dir 0
+  ifelse (ghost-x - cur-x) > 0
+  [set dir 90]
+  [set dir 270]
+  report dir
+end
+
+to-report dir-to-ghost-y [cur-y ghost-y]
+  let dir 0
+  ifelse (ghost-y - cur-y) > 0
+  [set dir 0]
+  [set dir 180]
+  report dir
+end
 
